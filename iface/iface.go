@@ -86,6 +86,15 @@ func GetInterfaceByName(name string) (*Interface, error) {
 	return nil, fmt.Errorf("interface name %q not found", name)
 }
 
+func GetInterfaceNames() (list []string) {
+	for k, v := range record {
+		if v.hasIPv4Addr {
+			list = append(list, k)
+		}
+	}
+	return
+}
+
 func resolveAllInterfaces() {
 	once.Do(func() {
 		record = make(map[string]*Interface)
