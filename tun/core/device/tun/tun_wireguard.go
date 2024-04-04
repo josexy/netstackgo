@@ -1,7 +1,10 @@
+//go:build !(linux && amd64) && !(linux && arm64)
+
 package tun
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/josexy/netstackgo/tun/core/device"
 	"github.com/josexy/netstackgo/tun/core/device/iobased"
@@ -15,6 +18,12 @@ type TUN struct {
 	mtu    uint32
 	name   string
 	offset int
+
+	rSizes []int
+	rBuffs [][]byte
+	wBuffs [][]byte
+	rMutex sync.Mutex
+	wMutex sync.Mutex
 }
 
 func Open(name string, mtu uint32) (_ device.Device, err error) {
@@ -24,7 +33,14 @@ func Open(name string, mtu uint32) (_ device.Device, err error) {
 		}
 	}()
 
-	t := &TUN{name: name, mtu: mtu, offset: offset}
+	t := &TUN{
+		name:   name,
+		mtu:    mtu,
+		offset: offset,
+		rSizes: make([]int, 1),
+		rBuffs: make([][]byte, 1),
+		wBuffs: make([][]byte, 1),
+	}
 
 	forcedMTU := defaultMTU
 	if t.mtu > 0 {
@@ -36,6 +52,7 @@ func Open(name string, mtu uint32) (_ device.Device, err error) {
 		return nil, fmt.Errorf("create tun: %w", err)
 	}
 	t.nt = nt.(*tun.NativeTun)
+
 	tunMTU, err := nt.MTU()
 	if err != nil {
 		return nil, fmt.Errorf("get mtu: %w", err)
@@ -47,15 +64,23 @@ func Open(name string, mtu uint32) (_ device.Device, err error) {
 		return nil, fmt.Errorf("create endpoint: %w", err)
 	}
 	t.Endpoint = ep
+
 	return t, nil
 }
 
 func (t *TUN) Read(packet []byte) (int, error) {
-	return t.nt.Read(packet, t.offset)
+	t.rMutex.Lock()
+	defer t.rMutex.Unlock()
+	t.rBuffs[0] = packet
+	_, err := t.nt.Read(t.rBuffs, t.rSizes, t.offset)
+	return t.rSizes[0], err
 }
 
 func (t *TUN) Write(packet []byte) (int, error) {
-	return t.nt.Write(packet, t.offset)
+	t.wMutex.Lock()
+	defer t.wMutex.Unlock()
+	t.wBuffs[0] = packet
+	return t.nt.Write(t.wBuffs, t.offset)
 }
 
 func (t *TUN) Name() string {

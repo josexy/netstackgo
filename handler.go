@@ -3,46 +3,36 @@ package netstackgo
 import (
 	"net"
 	"net/netip"
-	"strconv"
 
 	"github.com/josexy/netstackgo/tun/core/adapter"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 type ConnHandler interface {
-	HandleTCPConn(*ConnTuple, net.Conn)
-	HandleUDPConn(*ConnTuple, net.PacketConn)
+	HandleTCPConn(ConnTuple, net.Conn)
+	HandleUDPConn(ConnTuple, net.PacketConn)
 }
 
 type ConnTuple struct {
-	SrcIP   netip.Addr
-	SrcPort uint16
-	DstIP   netip.Addr
-	DstPort uint16
+	SrcAddr netip.AddrPort
+	DstAddr netip.AddrPort
 }
 
-func newConnTuple(id *stack.TransportEndpointID) *ConnTuple {
-	srcIP, _ := netip.AddrFromSlice([]byte(id.RemoteAddress))
-	dstIP, _ := netip.AddrFromSlice([]byte(id.LocalAddress))
-
-	return &ConnTuple{
-		SrcIP:   srcIP,
-		SrcPort: id.RemotePort,
-		DstIP:   dstIP,
-		DstPort: id.LocalPort,
+func newConnTuple(id *stack.TransportEndpointID) ConnTuple {
+	srcIP, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
+	dstIP, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
+	return ConnTuple{
+		SrcAddr: netip.AddrPortFrom(srcIP, id.RemotePort),
+		DstAddr: netip.AddrPortFrom(dstIP, id.LocalPort),
 	}
 }
 
 func (t *ConnTuple) Src() string {
-	return net.JoinHostPort(t.SrcIP.String(), strconv.FormatUint(uint64(t.SrcPort), 10))
+	return t.SrcAddr.String()
 }
 
 func (t *ConnTuple) Dst() string {
-	return net.JoinHostPort(t.DstIP.String(), strconv.FormatUint(uint64(t.DstPort), 10))
-}
-
-func (t *ConnTuple) DstAddrPort() netip.AddrPort {
-	return netip.AddrPortFrom(t.DstIP, uint16(t.DstPort))
+	return t.DstAddr.String()
 }
 
 type tunTransportHandler struct {

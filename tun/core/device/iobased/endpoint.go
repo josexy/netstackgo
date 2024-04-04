@@ -8,7 +8,7 @@ import (
 	"io"
 	"sync"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -110,7 +110,7 @@ func (e *Endpoint) dispatchLoop(cancel context.CancelFunc) {
 		}
 
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: bufferv2.MakeWithData(data[offset : offset+n]),
+			Payload: buffer.MakeWithData(data[offset : offset+n]),
 		})
 
 		switch header.IPVersion(data[offset:]) {
@@ -128,7 +128,7 @@ func (e *Endpoint) dispatchLoop(cancel context.CancelFunc) {
 func (e *Endpoint) outboundLoop(ctx context.Context) {
 	for {
 		pkt := e.ReadContext(ctx)
-		if pkt.IsNil() {
+		if pkt == nil {
 			break
 		}
 		e.writePacket(pkt)
@@ -136,12 +136,12 @@ func (e *Endpoint) outboundLoop(ctx context.Context) {
 }
 
 // writePacket writes outbound packets to the io.Writer.
-func (e *Endpoint) writePacket(pkt stack.PacketBufferPtr) tcpip.Error {
+func (e *Endpoint) writePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	defer pkt.DecRef()
 	buf := pkt.ToBuffer()
 	defer buf.Release()
 	if e.offset != 0 {
-		v := bufferv2.NewViewWithData(make([]byte, e.offset))
+		v := buffer.NewViewWithData(make([]byte, e.offset))
 		_ = buf.Prepend(v)
 	}
 

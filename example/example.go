@@ -39,7 +39,7 @@ func tunnel(dst, src io.ReadWriteCloser) {
 
 type handler struct{}
 
-func (h *handler) HandleTCPConn(info *netstackgo.ConnTuple, conn net.Conn) {
+func (h *handler) HandleTCPConn(info netstackgo.ConnTuple, conn net.Conn) {
 	log.Printf("tcp, src: %s, dst: %s", info.Src(), info.Dst())
 	dialer := net.Dialer{Timeout: time.Second * 10}
 	name, err := iface.DefaultRouteInterface()
@@ -48,7 +48,7 @@ func (h *handler) HandleTCPConn(info *netstackgo.ConnTuple, conn net.Conn) {
 		return
 	}
 	// bind an outbound interface to avoid routing loops
-	if err := bind.BindToDeviceForTCP(name, &dialer, "tcp4", info.DstIP); err != nil {
+	if err := bind.BindToDeviceForTCP(name, &dialer, "tcp4", info.DstAddr.Addr()); err != nil {
 		log.Println(err)
 		return
 	}
@@ -61,7 +61,7 @@ func (h *handler) HandleTCPConn(info *netstackgo.ConnTuple, conn net.Conn) {
 	tunnel(target, conn)
 }
 
-func (h *handler) HandleUDPConn(info *netstackgo.ConnTuple, conn net.PacketConn) {
+func (h *handler) HandleUDPConn(info netstackgo.ConnTuple, conn net.PacketConn) {
 	log.Printf("udp, src: %s, dst: %s", info.Src(), info.Dst())
 	// do something...
 }
