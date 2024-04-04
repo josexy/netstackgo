@@ -13,18 +13,18 @@ import (
 
 type myHandler struct{}
 
-func (*myHandler) HandleTCPConn(info *netstackgo.ConnTuple, conn net.Conn) {
+func (*myHandler) HandleTCPConn(info netstackgo.ConnTuple, conn net.Conn) {
 	log.Printf("tcp, src: %s, dst: %s", info.Src(), info.Dst())
 	// do something...
 }
-func (*myHandler) HandleUDPConn(info *netstackgo.ConnTuple, conn net.PacketConn) {
+func (*myHandler) HandleUDPConn(info netstackgo.ConnTuple, conn net.PacketConn) {
 	log.Printf("udp, src: %s, dst: %s", info.Src(), info.Dst())
 	// do something...
 }
 
 func simple() {
 	nt := netstackgo.New(tun.TunConfig{
-		Name: "tun2",
+		Name: "utun5",
 		Addr: "192.18.0.1/16",
 		MTU:  tun.DefaultMTU,
 	})

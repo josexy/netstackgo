@@ -21,7 +21,7 @@ func WithUDPHandler(handle func(adapter.UDPConn)) option.Option {
 				return
 			}
 			conn := &udpConn{
-				UDPConn: gonet.NewUDPConn(s, &wq, ep),
+				UDPConn: gonet.NewUDPConn(&wq, ep),
 				id:      id,
 			}
 			handle(conn)
