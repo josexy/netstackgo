@@ -20,7 +20,7 @@ type ConnTuple struct {
 
 func newConnTuple(id *stack.TransportEndpointID) ConnTuple {
 	srcIP, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
-	dstIP, _ := netip.AddrFromSlice(id.RemoteAddress.AsSlice())
+	dstIP, _ := netip.AddrFromSlice(id.LocalAddress.AsSlice())
 	return ConnTuple{
 		SrcAddr: netip.AddrPortFrom(srcIP, id.RemotePort),
 		DstAddr: netip.AddrPortFrom(dstIP, id.LocalPort),
