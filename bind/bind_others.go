@@ -40,7 +40,7 @@ func lookupLocalAddr(ifaceName string, network string, dst netip.Addr, port uint
 	return netip.AddrPortFrom(addr, uint16(port)), nil
 }
 
-func bindToDeviceForTCP(ifaceName string, dialer *net.Dialer, network string, dst netip.Addr) error {
+func bindToDeviceForConn(ifaceName string, dialer *net.Dialer, network string, dst netip.Addr) error {
 	if !dst.IsGlobalUnicast() {
 		return nil
 	}
@@ -78,7 +78,7 @@ func bindToDeviceForTCP(ifaceName string, dialer *net.Dialer, network string, ds
 	return nil
 }
 
-func bindToDeviceForUDP(ifaceName string, _ *net.ListenConfig, network, address string) (string, error) {
+func bindToDeviceForPacket(ifaceName string, _ *net.ListenConfig, network, address string) (string, error) {
 	_, port, err := net.SplitHostPort(address)
 	if err != nil {
 		port = "0"

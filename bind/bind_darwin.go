@@ -43,7 +43,7 @@ func setupControl(ifaceIndex int, nextChain controlFn) controlFn {
 	}
 }
 
-func bindToDeviceForTCP(ifaceName string, dialer *net.Dialer, _ string, _ netip.Addr) error {
+func bindToDeviceForConn(ifaceName string, dialer *net.Dialer, _ string, _ netip.Addr) error {
 	iface, err := iface.GetInterfaceByName(ifaceName)
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func bindToDeviceForTCP(ifaceName string, dialer *net.Dialer, _ string, _ netip.
 	return nil
 }
 
-func bindToDeviceForUDP(ifaceName string, lc *net.ListenConfig, _, address string) (string, error) {
+func bindToDeviceForPacket(ifaceName string, lc *net.ListenConfig, _, address string) (string, error) {
 	iface, err := iface.GetInterfaceByName(ifaceName)
 	if err != nil {
 		return "", err
