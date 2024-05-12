@@ -21,7 +21,7 @@ func TestBindToDeviceForTCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	log.Println(ifaceName)
-	if err := BindToDeviceForTCP(ifaceName, &dialer, "tcp4", addr); err != nil {
+	if err := BindToDeviceForConn(ifaceName, &dialer, "tcp4", addr); err != nil {
 		t.Fatal(err)
 	}
 	client := &http.Client{Transport: &http.Transport{DialContext: dialer.DialContext}}
@@ -44,7 +44,7 @@ func TestBindToDeviceForUDP(t *testing.T) {
 	}
 	log.Println(ifaceName)
 
-	addr, err := BindToDeviceForUDP(ifaceName, &lc, "udp4", "")
+	addr, err := BindToDeviceForPacket(ifaceName, &lc, "udp4", "")
 	if err != nil {
 		t.Fatal(err)
 	}

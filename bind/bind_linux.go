@@ -36,12 +36,12 @@ func setupControl(ifaceName string, nextChain controlFn) controlFn {
 	}
 }
 
-func bindToDeviceForTCP(ifaceName string, dialer *net.Dialer, _ string, _ netip.Addr) error {
+func bindToDeviceForConn(ifaceName string, dialer *net.Dialer, _ string, _ netip.Addr) error {
 	dialer.Control = setupControl(ifaceName, dialer.Control)
 	return nil
 }
 
-func bindToDeviceForUDP(ifaceName string, lc *net.ListenConfig, _, address string) (string, error) {
+func bindToDeviceForPacket(ifaceName string, lc *net.ListenConfig, _, address string) (string, error) {
 	lc.Control = setupControl(ifaceName, lc.Control)
 	return address, nil
 }

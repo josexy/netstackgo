@@ -48,7 +48,7 @@ func (h *handler) HandleTCPConn(info netstackgo.ConnTuple, conn net.Conn) {
 		return
 	}
 	// bind an outbound interface to avoid routing loops
-	if err := bind.BindToDeviceForTCP(name, &dialer, "tcp4", info.DstAddr.Addr()); err != nil {
+	if err := bind.BindToDeviceForConn(name, &dialer, "tcp4", info.DstAddr.Addr()); err != nil {
 		log.Println(err)
 		return
 	}
