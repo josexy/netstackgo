@@ -84,16 +84,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	defer func() {
-		if err := nt.Close(); err != nil {
-			log.Println(err)
-		}
-	}()
-
 	nt.RegisterConnHandler(&handler{})
 
-	// wait
 	inter := make(chan os.Signal, 1)
 	signal.Notify(inter, syscall.SIGINT)
 	<-inter
+
+	nt.Close()
+	time.Sleep(time.Second)
+	log.Println("done")
 }

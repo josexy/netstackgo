@@ -10,40 +10,62 @@ import (
 )
 
 type TunLink struct {
-	link           netlink.Link
-	addrs          []netip.Prefix
-	tableIndex     int
-	ruleStartIndex int
-	ruleEndIndex   int
+	link                               netlink.Link
+	addrv4, addrv6                     []netip.Prefix
+	tableIndex                         int
+	ruleStartIndexV4, ruleStartIndexV6 int
+	ruleEndIndexV4, ruleEndIndexV6     int
 }
 
-func NewTunLink(name string, cidrs []netip.Prefix) (*TunLink, error) {
-	link, err := netlink.LinkByName(name)
+func NewTunLink(tunCfg TunConfig) (*TunLink, error) {
+	link, err := netlink.LinkByName(tunCfg.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	var tableIndex int = 10086
-	var ruleIndex int = 10086
+	tableIndex := tunCfg.IPRoute2TableIndex
+	ruleIndex := tunCfg.IPRoute2RuleIndex
+	if tableIndex <= 0 {
+		tableIndex = 10086
+	}
+	if ruleIndex <= 0 {
+		ruleIndex = 10086
+	}
 	for {
-		tableIndex = int(rand.Uint32())
-		routeList, fErr := netlink.RouteListFiltered(netlink.FAMILY_ALL, &netlink.Route{Table: tableIndex}, netlink.RT_FILTER_TABLE)
-		if len(routeList) == 0 || fErr != nil {
+		routeList, err := netlink.RouteListFiltered(netlink.FAMILY_ALL, &netlink.Route{Table: tableIndex}, netlink.RT_FILTER_TABLE)
+		if len(routeList) == 0 || err != nil {
 			break
 		}
+		tableIndex = int(rand.Uint32())
 	}
 
+	var addrv4, addrv6 []netip.Prefix
+	for _, cidr := range tunCfg.CIDR {
+		if cidr.Addr().Is4() {
+			addrv4 = append(addrv4, cidr)
+		} else if cidr.Addr().Is6() {
+			addrv6 = append(addrv6, cidr)
+		}
+	}
 	return &TunLink{
-		link:           link,
-		addrs:          cidrs,
-		tableIndex:     tableIndex,
-		ruleStartIndex: ruleIndex,
-		ruleEndIndex:   ruleIndex,
+		link:             link,
+		addrv4:           addrv4,
+		addrv6:           addrv6,
+		tableIndex:       tableIndex,
+		ruleStartIndexV4: ruleIndex,
+		ruleStartIndexV6: ruleIndex,
+		ruleEndIndexV4:   ruleIndex,
+		ruleEndIndexV6:   ruleIndex,
 	}, nil
 }
 
 func (tr *TunLink) ConfigureTunAddrs() error {
-	for _, cidr := range tr.addrs {
+	for _, cidr := range tr.addrv4 {
+		if err := tr.AddAddr(cidr); err != nil {
+			return err
+		}
+	}
+	for _, cidr := range tr.addrv6 {
 		if err := tr.AddAddr(cidr); err != nil {
 			return err
 		}
@@ -64,10 +86,11 @@ func (tr *TunLink) ConfigureTunRoutes() error {
 func (tr *TunLink) DeleteConfiguration() error {
 	tr.DelRoute(netip.PrefixFrom(netip.IPv4Unspecified(), 0))
 	tr.DelRoute(netip.PrefixFrom(netip.IPv6Unspecified(), 0))
-	for _, cidr := range tr.addrs {
-		if err := tr.DelAddr(cidr); err != nil {
-			return err
-		}
+	for _, cidr := range tr.addrv4 {
+		tr.DelAddr(cidr)
+	}
+	for _, cidr := range tr.addrv6 {
+		tr.DelAddr(cidr)
 	}
 	tr.Setdown()
 	return tr.DelRules()
@@ -89,68 +112,85 @@ func (tr *TunLink) DelAddr(cidr netip.Prefix) error {
 	return netlink.AddrDel(tr.link, addr)
 }
 
-// ip rule add not from all dport 53 lookup main suppress_prefixlength 0
-// ip rule add not from all iif lo lookup 1970566510
-// ip rule add from 0.0.0.0 iif lo uidrange 0-4294967294 lookup 1970566510
-// ip rule add from 198.18.0.1 iif lo uidrange 0-4294967294 lookup 1970566510
+// 9000:	from all to 192.18.0.0/16 lookup 2022
+// 9001:	from all lookup 2022 suppress_prefixlength 0
+// 9002:	not from all dport 53 lookup main suppress_prefixlength 0
+// 9002:	from all iif tun0 goto 9010
+// 9003:	not from all iif lo lookup 2022
+// 9003:	from 0.0.0.0 iif lo lookup 2022
+// 9003:	from 192.18.0.0/16 iif lo lookup 2022
+// 9010:	from all nop
 func (tr *TunLink) AddRules() error {
-	ruleIndex := tr.ruleStartIndex
-	rule := netlink.NewRule()
-	rule.Invert = true
-	rule.Priority = ruleIndex
-	rule.Dport = netlink.NewRulePortRange(53, 53)
-	rule.Table = unix.RT_TABLE_MAIN
-	rule.SuppressPrefixlen = 0
-	rule.Family = netlink.FAMILY_V4
-	netlink.RuleAdd(rule)
-	ruleIndex++
+	addrules := func(ruleIndex int, cidrs []netip.Prefix, family int) int {
+		var rule *netlink.Rule
 
-	rule = netlink.NewRule()
-	rule.Invert = true
-	rule.Priority = ruleIndex
-	rule.Dport = netlink.NewRulePortRange(53, 53)
-	rule.Table = unix.RT_TABLE_MAIN
-	rule.SuppressPrefixlen = 0
-	rule.Family = netlink.FAMILY_V6
-	netlink.RuleAdd(rule)
-	ruleIndex++
+		for _, cidr := range cidrs {
+			rule = netlink.NewRule()
+			rule.Priority = ruleIndex
+			rule.Dst = netPrefix2IPNet(cidr.Masked())
+			rule.Table = tr.tableIndex
+			rule.Family = family
+			netlink.RuleAdd(rule)
+			ruleIndex++
+		}
 
-	rule = netlink.NewRule()
-	rule.Invert = true
-	rule.Priority = ruleIndex
-	rule.IifName = "lo"
-	rule.Table = tr.tableIndex
-	rule.Family = netlink.FAMILY_V4
-	netlink.RuleAdd(rule)
-	ruleIndex++
-
-	const endUID = 0xFFFFFFFF - 1
-	rule = netlink.NewRule()
-	rule.Priority = ruleIndex
-	rule.Src = netPrefix2IPNet(netip.PrefixFrom(netip.IPv4Unspecified(), 32))
-	rule.IifName = "lo"
-	rule.Table = tr.tableIndex
-	rule.Family = netlink.FAMILY_V4
-	rule.UIDRange = netlink.NewRuleUIDRange(0, endUID)
-	netlink.RuleAdd(rule)
-	ruleIndex++
-
-	for _, addr := range tr.addrs {
 		rule = netlink.NewRule()
 		rule.Priority = ruleIndex
-		rule.Src = netPrefix2IPNet(netip.PrefixFrom(addr.Addr(), 32))
-		rule.IifName = "lo"
 		rule.Table = tr.tableIndex
-		rule.UIDRange = netlink.NewRuleUIDRange(0, endUID)
-		if addr.Addr().Is6() {
-			rule.Family = netlink.FAMILY_V6
-		} else {
-			rule.Family = netlink.FAMILY_V4
-		}
+		rule.SuppressPrefixlen = 0
+		rule.Family = family
 		netlink.RuleAdd(rule)
 		ruleIndex++
+
+		rule = netlink.NewRule()
+		rule.Invert = true
+		rule.Priority = ruleIndex
+		rule.Dport = netlink.NewRulePortRange(53, 53)
+		rule.Table = unix.RT_TABLE_MAIN
+		rule.SuppressPrefixlen = 0
+		rule.Family = family
+		netlink.RuleAdd(rule)
+		ruleIndex++
+
+		if family == netlink.FAMILY_V4 {
+			rule = netlink.NewRule()
+			rule.Invert = true
+			rule.Priority = ruleIndex
+			rule.IifName = "lo"
+			rule.Table = tr.tableIndex
+			rule.Family = family
+			netlink.RuleAdd(rule)
+
+			rule = netlink.NewRule()
+			rule.Priority = ruleIndex
+			rule.Src = netPrefix2IPNet(netip.PrefixFrom(netip.IPv4Unspecified(), 32))
+			rule.IifName = "lo"
+			rule.Table = tr.tableIndex
+			rule.Family = family
+			netlink.RuleAdd(rule)
+		}
+
+		for _, cidr := range cidrs {
+			rule = netlink.NewRule()
+			rule.Priority = ruleIndex
+			rule.Src = netPrefix2IPNet(cidr.Masked())
+			rule.IifName = "lo"
+			rule.Table = tr.tableIndex
+			rule.Family = family
+			netlink.RuleAdd(rule)
+		}
+		return ruleIndex
 	}
-	tr.ruleEndIndex = ruleIndex - 1
+
+	ruleIndexV4 := tr.ruleStartIndexV4
+	ruleIndexV6 := tr.ruleStartIndexV6
+	if len(tr.addrv4) > 0 {
+		tr.ruleEndIndexV4 = addrules(ruleIndexV4, tr.addrv4, netlink.FAMILY_V4)
+	}
+	if len(tr.addrv6) > 0 {
+		tr.ruleEndIndexV6 = addrules(ruleIndexV6, tr.addrv6, netlink.FAMILY_V6)
+	}
+
 	return nil
 }
 
@@ -160,7 +200,8 @@ func (tr *TunLink) DelRules() error {
 		return err
 	}
 	for _, rule := range rules {
-		if rule.Priority >= tr.ruleStartIndex && rule.Priority <= tr.ruleEndIndex {
+		if (rule.Family == netlink.FAMILY_V4 && rule.Priority >= tr.ruleStartIndexV4 && rule.Priority <= tr.ruleEndIndexV4) ||
+			rule.Family == netlink.FAMILY_V6 && rule.Priority >= tr.ruleStartIndexV6 && rule.Priority <= tr.ruleEndIndexV6 {
 			delRule := netlink.NewRule()
 			delRule.Family = rule.Family
 			delRule.Priority = rule.Priority

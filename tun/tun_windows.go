@@ -6,10 +6,8 @@ type TunLink struct {
 	addrs []netip.Prefix
 }
 
-func NewTunLink(name string, cidrs []netip.Prefix) (*TunLink, error) {
-	return &TunLink{
-		addrs: cidrs,
-	}, nil
+func NewTunLink(tunCfg TunConfig) (*TunLink, error) {
+	return &TunLink{}, nil
 }
 
 func (tr *TunLink) ConfigureTunAddrs() error {

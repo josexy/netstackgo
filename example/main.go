@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/josexy/netstackgo"
 	"github.com/josexy/netstackgo/tun"
@@ -34,9 +35,13 @@ func simple() {
 	if err := nt.Start(); err != nil {
 		log.Fatal(err)
 	}
-	defer nt.Close()
 	nt.RegisterConnHandler(&myHandler{})
+
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT)
 	<-interrupt
+
+	nt.Close()
+	time.Sleep(time.Second)
+	log.Println("done")
 }

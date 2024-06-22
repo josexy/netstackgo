@@ -54,7 +54,7 @@ func (ns *TunNetstack) Start() (err error) {
 		return
 	}
 
-	if ns.tunLink, err = tun.NewTunLink(ns.tunCfg.Name, ns.tunCfg.CIDR); err != nil {
+	if ns.tunLink, err = tun.NewTunLink(ns.tunCfg); err != nil {
 		return
 	}
 
@@ -63,12 +63,14 @@ func (ns *TunNetstack) Start() (err error) {
 	}
 
 	if err = ns.tunLink.ConfigureTunRoutes(); err != nil {
+		ns.tunLink.DeleteConfiguration()
 		return
 	}
 
 	ns.handler.run()
 
 	if err = ns.createStack(); err != nil {
+		ns.tunLink.DeleteConfiguration()
 		return
 	}
 	ns.running.Store(true)
