@@ -1,7 +1,7 @@
 package tun
 
 import (
-	"math/rand/v2"
+	"math/rand"
 	"net"
 	"net/netip"
 
