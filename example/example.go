@@ -6,9 +6,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -25,16 +25,16 @@ var (
 )
 
 func tunnel(dst, src io.ReadWriteCloser) {
-	var wg sync.WaitGroup
-	wg.Add(2)
+	ch := make(chan error, 2)
+	defer dst.Close()
+	defer src.Close()
 	fn := func(dest, src io.ReadWriteCloser) {
-		defer wg.Done()
-		_, _ = io.Copy(dest, src)
-		_ = dest.Close()
+		_, err := io.Copy(dest, src)
+		ch <- err
 	}
 	go fn(dst, src)
 	go fn(src, dst)
-	wg.Wait()
+	<-ch
 }
 
 type handler struct{}
@@ -52,7 +52,7 @@ func (h *handler) HandleTCPConn(info netstackgo.ConnTuple, conn net.Conn) {
 		log.Println(err)
 		return
 	}
-	target, err := dialer.DialContext(context.Background(), "tcp4", remoteAddr)
+	target, err := dialer.DialContext(context.Background(), "tcp", remoteAddr)
 	if err != nil {
 		log.Println(err)
 		return
@@ -77,7 +77,7 @@ func main() {
 	// creating a tun device requires root permissions
 	nt := netstackgo.New(tun.TunConfig{
 		Name: tunName,
-		Addr: tunCIDR,
+		CIDR: []netip.Prefix{netip.MustParsePrefix(tunCIDR)},
 		MTU:  tun.DefaultMTU,
 	})
 	if err := nt.Start(); err != nil {

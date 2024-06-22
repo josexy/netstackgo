@@ -3,10 +3,10 @@ package netstackgo
 import (
 	"errors"
 	"net/netip"
+	"sync/atomic"
 
 	"github.com/josexy/netstackgo/tun"
 	"github.com/josexy/netstackgo/tun/core"
-	"github.com/josexy/netstackgo/tun/core/device"
 	T "github.com/josexy/netstackgo/tun/core/device/tun"
 	"github.com/josexy/netstackgo/tun/core/option"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -18,80 +18,74 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-var defaultCIDRRoutes = []string{
-	"1.0.0.0/8",
-	"2.0.0.0/7",
-	"4.0.0.0/6",
-	"8.0.0.0/5",
-	"16.0.0.0/4",
-	"32.0.0.0/3",
-	"64.0.0.0/2",
-	"128.0.0.0/1",
+var DefaultRoutes = []netip.Prefix{
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 0, 0, 0}), 8),
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 0, 0, 0}), 7),
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{4, 0, 0, 0}), 6),
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{8, 0, 0, 0}), 5),
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{16, 0, 0, 0}), 4),
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{32, 0, 0, 0}), 3),
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{64, 0, 0, 0}), 2),
+	netip.PrefixFrom(netip.AddrFrom4([4]byte{128, 0, 0, 0}), 1),
 }
 
 type TunNetstack struct {
-	netstack  *stack.Stack
-	tunDevice device.Device
-	tunCfg    tun.TunConfig
-	handler   *tunTransportHandler
-	running   bool
+	netstack   *stack.Stack
+	tunStackEp stack.LinkEndpoint
+	tunCfg     tun.TunConfig
+	tunLink    *tun.TunLink
+	handler    *tunTransportHandler
+	running    atomic.Bool
 }
 
 func New(tunCfg tun.TunConfig) *TunNetstack {
 	return &TunNetstack{
 		tunCfg:  tunCfg,
 		handler: newTunTransportHandler(),
-		running: false,
 	}
 }
 
 func (ns *TunNetstack) Start() (err error) {
-	if ns.running {
+	if ns.running.Load() {
 		return errors.New("tun netstack is running")
 	}
-	// create tun device
-	if ns.tunDevice, err = T.Open(ns.tunCfg.Name, ns.tunCfg.MTU); err != nil {
+
+	if ns.tunStackEp, err = T.Open(ns.tunCfg.Name, ns.tunCfg.MTU); err != nil {
 		return
 	}
 
-	// setup ip address for tun device
-	if err = tun.SetTunAddress(ns.tunCfg.Name, ns.tunCfg.Addr, ns.tunCfg.MTU); err != nil {
+	if ns.tunLink, err = tun.NewTunLink(ns.tunCfg.Name, ns.tunCfg.CIDR); err != nil {
 		return
 	}
 
-	tunSubnet := netip.MustParsePrefix(ns.tunCfg.Addr)
-	var routes []tun.IPRoute
-	for _, cidr := range defaultCIDRRoutes {
-		routes = append(routes, tun.IPRoute{
-			Dest:    netip.MustParsePrefix(cidr),
-			Gateway: tunSubnet.Addr(), // redirect to tun device
-		})
+	if err = ns.tunLink.ConfigureTunAddrs(); err != nil {
+		return
 	}
 
-	// setup local route table
-	if err = tun.AddTunRoutes(ns.tunCfg.Name, routes); err != nil {
+	if err = ns.tunLink.ConfigureTunRoutes(); err != nil {
 		return
 	}
 
 	ns.handler.run()
 
-	// init gVisor netstack
 	if err = ns.createStack(); err != nil {
 		return
 	}
-	ns.running = true
+	ns.running.Store(true)
 	return
 }
 
 func (ns *TunNetstack) Close() error {
-	if !ns.running {
+	if !ns.running.Load() {
 		return errors.New("tun netstack was stopped")
 	}
-	err := ns.tunDevice.Close()
+
+	ns.tunLink.DeleteConfiguration()
+	ns.tunStackEp.Close()
 	ns.handler.finish()
 	ns.netstack.Close()
 	ns.netstack.Wait()
-	return err
+	return nil
 }
 
 func (ns *TunNetstack) RegisterConnHandler(handler ConnHandler) {
@@ -125,7 +119,7 @@ func (ns *TunNetstack) createStack() error {
 		core.WithUDPHandler(ns.handler.HandleUDP),
 
 		// Create stack NIC and then bind link endpoint to it.
-		core.WithCreatingNIC(nicID, ns.tunDevice),
+		core.WithCreatingNIC(nicID, ns.tunStackEp),
 
 		// In the past we did s.AddAddressRange to assign 0.0.0.0/0
 		// onto the interface. We need that to be able to terminate

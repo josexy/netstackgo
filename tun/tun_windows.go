@@ -1,33 +1,25 @@
 package tun
 
-import (
-	"fmt"
-	"net"
-)
+import "net/netip"
 
-func SetTunAddress(name string, addr string, mtu uint32) (err error) {
-	ip, subnet, _ := net.ParseCIDR(addr)
-	cmd := fmt.Sprintf("netsh interface ip set address \"%s\" static %s %s none", name, ip.String(), net.IP(subnet.Mask).String())
-	if err := exeCmd(cmd); err != nil {
-		return err
-	}
+type TunLink struct {
+	addrs []netip.Prefix
+}
+
+func NewTunLink(name string, cidrs []netip.Prefix) (*TunLink, error) {
+	return &TunLink{
+		addrs: cidrs,
+	}, nil
+}
+
+func (tr *TunLink) ConfigureTunAddrs() error {
 	return nil
 }
 
-func AddTunRoutes(name string, routes []IPRoute) error {
-	for _, route := range routes {
-		if !route.Dest.IsValid() && !route.Gateway.IsValid() {
-			continue
-		}
-		cmd := fmt.Sprintf("netsh interface ipv4 add route %s \"%s\" %s metric=%d store=active",
-			route.Dest.String(),
-			name,
-			route.Gateway.String(),
-			10, // priority
-		)
-		if err := exeCmd(cmd); err != nil {
-			return err
-		}
-	}
+func (tr *TunLink) ConfigureTunRoutes() error {
+	return nil
+}
+
+func (tr *TunLink) DeleteConfiguration() error {
 	return nil
 }

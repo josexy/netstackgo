@@ -1,16 +1,18 @@
+//go:build !(linux && amd64) && !(linux && arm64)
+
 package tun
 
 import (
 	"fmt"
 	"sync"
 
-	"github.com/josexy/netstackgo/tun/core/device"
 	"github.com/josexy/netstackgo/tun/core/device/iobased"
 	"golang.zx2c4.com/wireguard/tun"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 type TUN struct {
-	*iobased.Endpoint
+	stack.LinkEndpoint
 
 	nt     *tun.NativeTun
 	mtu    uint32
@@ -24,7 +26,7 @@ type TUN struct {
 	wMutex sync.Mutex
 }
 
-func Open(name string, mtu uint32) (_ device.Device, err error) {
+func Open(name string, mtu uint32) (_ stack.LinkEndpoint, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("open tun: %v", r)
@@ -61,7 +63,7 @@ func Open(name string, mtu uint32) (_ device.Device, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("create endpoint: %w", err)
 	}
-	t.Endpoint = ep
+	t.LinkEndpoint = ep
 
 	return t, nil
 }
@@ -86,7 +88,7 @@ func (t *TUN) Name() string {
 	return name
 }
 
-func (t *TUN) Close() error {
-	defer t.Endpoint.Close()
-	return t.nt.Close()
+func (t *TUN) Close() {
+	t.nt.Close()
+	t.LinkEndpoint.Close()
 }
