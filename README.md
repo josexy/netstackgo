@@ -1,8 +1,12 @@
 # netstackgo
+
+> ⚠️ Deprecated: This project is no longer maintained.
+> Please use https://github.com/josexy/cropstun instead.
+
 An easy-to-use netstack, wrapped by gvisor and wireguard-go, which supports macOS/Linux/Windows.
 
 ```shell
-go get -u github.com/josexy/netstackgo
+go get github.com/josexy/netstackgo
 ```
 
 # usage
